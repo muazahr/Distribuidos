@@ -55,3 +55,6 @@ class RemoteSet(rt.RSet):
 
         except KeyError as exc:
             raise rt.KeyError() from exc
+
+    def getAllItems(self, current=None):
+        return self._data.copy()
