@@ -1,14 +1,13 @@
 import sys
 import Ice
 import RemoteTypes as rt
-
 from typing import List
 
+
 class ClientApp(Ice.Application):
-    """Aplicación del cliente."""
+    """Aplicación del cliente para probar RemoteTypes."""
 
     def run(self, args: List[str]) -> int:
-        # Configurar el proxy del servidor
         proxy = self.communicator().stringToProxy("factory:default -p 60000")
         factory = rt.FactoryPrx.checkedCast(proxy)
 
@@ -16,32 +15,23 @@ class ClientApp(Ice.Application):
             print("No se pudo conectar al servidor.")
             return 1
 
-        # Probar RDict
-        print("Obteniendo un RDict remoto...")
-        rdictProxy = factory.get(rt.TypeName.RDict, "MiDiccionario")
-        rDict = rt.RDictPrx.checkedCast(rdictProxy)
-        rDict.setItem("clave1", "valor1")
-        rDict.setItem("clave2", "valor2")
-        print(f"Valor de clave1: {rDict.getItem('clave1')}")
-        print(f"Longitud de RDict: {rDict.length()}")
+        # Operaciones de ejemplo
+        print("Probando operaciones remotas con RDict, RList y RSet...")
 
-        # Probar RList
-        print("\nObteniendo un RList remoto...")
-        rlictProxy = factory.get(rt.TypeName.RList, "MiLista")
-        rList = rt.RListPrx.checkedCast(rlictProxy)        
-        rList.append("elemento1")
-        rList.append("elemento2")
-        print(f"Primer elemento en RList: {rList.getItem(0)}")
-        print(f"Longitud de RList: {rList.length()}")
+        rdict_proxy = factory.get(rt.TypeName.RDict, "MiDiccionario")
+        rdict = rt.RDictPrx.checkedCast(rdict_proxy)
+        rdict.setItem("clave1", "valor1")
+        print(f"Clave1: {rdict.getItem('clave1')}")
 
-        # Probar RSet
-        print("\nObteniendo un RSet remoto...")
-        rSetProxy = factory.get(rt.TypeName.RSet, "MiSet")
-        rSet = rt.RSetPrx.checkedCast(rSetProxy)           
-        rSet.add("valor1")
-        rSet.add("valor2")
-        print(f"Contiene 'valor1': {rSet.contains('valor1')}")
-        print(f"Longitud de RSet: {rSet.length()}")
+        rlist_proxy = factory.get(rt.TypeName.RList, "MiLista")
+        rlist = rt.RListPrx.checkedCast(rlist_proxy)
+        rlist.append("elemento1")
+        print(f"Primer elemento de RList: {rlist.getItem(0)}")
+
+        rset_proxy = factory.get(rt.TypeName.RSet, "MiSet")
+        rset = rt.RSetPrx.checkedCast(rset_proxy)
+        rset.add("valor1")
+        print(f"RSet contiene 'valor1': {rset.contains('valor1')}")
 
         return 0
 
