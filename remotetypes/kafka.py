@@ -15,15 +15,17 @@ def load_config(config_path="config.json"):
     """
     config_data = {}
     
-    # Intenta cargar desde archivo
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config_data = json.load(f)
-    except FileNotFoundError:
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_data = json.load(f)
+        except json.JSONDecodeError:
+            logging.error(f"Error al leer el archivo de configuración '{config_path}'. Verifica el formato JSON.")
+            return None
+    else:
         logging.warning(f"No se encontró el archivo de configuración '{config_path}'.")
         logging.warning("Intentando usar variables de entorno...")
 
-    # Variables de entorno como valores por defecto o reemplazo
     config_data.setdefault("kafka_bootstrap_servers", os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"))
     config_data.setdefault("group_id", os.environ.get("GROUP_ID", "remotetypes_group"))
     config_data.setdefault("input_topic", os.environ.get("INPUT_TOPIC", "operations"))
@@ -31,46 +33,33 @@ def load_config(config_path="config.json"):
 
     return config_data
 
+def invocar_operacion_remota(identificador_objeto, tipo_objeto, operacion, argumentos):
+    """
+    Lógica para realizar la operación en el servidor remoto.
+    Ajusta esta parte con la lógica específica de tu aplicación.
+    """
+    if tipo_objeto in ["RSet", "RList", "RDict"]:
+        return f"Procesado {operacion} en {identificador_objeto}"
+    else:
+        raise ValueError(f"Tipo de objeto desconocido: {tipo_objeto}")
+
 def process_message(raw_message):
     """
-    Procesa un mensaje JSON y devuelve un array de respuestas,
-    de acuerdo al formato especificado.
-    
-    Formato de entrada (array de objetos JSON):
-    [
-      {
-        "id": <obligatorio>,
-        "object_identifier": <obligatorio>,
-        "object_type": <obligatorio>,
-        "operation": <obligatorio>,
-        "args": <opcional>
-      },
-      ...
-    ]
-    
-    Formato de salida (array de objetos JSON):
-    [
-      {
-        "id": <string|number>,
-        "status": "ok" | "error",
-        "result": <opcional si ok>,
-        "error": <opcional si error>
-      },
-      ...
-    ]
+    Procesa un mensaje JSON y devuelve un array de respuestas.
     """
     responses = []
     try:
         raw_message = raw_message.strip()
         operations = json.loads(raw_message)
 
-        # Verificar que sea un array de operaciones
+        if isinstance(operations, dict):
+            operations = [operations]
+        
         if not isinstance(operations, list):
             raise ValueError("El mensaje raíz debe ser un array de operaciones.")
         
         for op in operations:
             try:
-                # Validar que existan las cuatro claves obligatorias
                 for key in ["id", "object_identifier", "object_type", "operation"]:
                     if key not in op:
                         raise ValueError(f"Falta la clave obligatoria: {key}")
@@ -81,7 +70,6 @@ def process_message(raw_message):
                 operation = op["operation"]
                 args = op.get("args", {})
 
-                # Manejo especial de "iter"
                 if operation == "iter":
                     responses.append({
                         "id": op_id,
@@ -90,55 +78,47 @@ def process_message(raw_message):
                     })
                     continue
                 
-                # Simula el procesamiento de la operación
-                result = f"Operación '{operation}' ejecutada en '{obj_type}:{obj_id}' con args={args}"
-
-                # Respuesta exitosa
+                result = invocar_operacion_remota(obj_id, obj_type, operation, args)
+                
                 responses.append({
                     "id": op_id,
                     "status": "ok",
                     "result": result
                 })
-
             except Exception as e:
-                # Error a nivel de operación
                 error_id = op.get("id", "unknown")
                 responses.append({
                     "id": error_id,
                     "status": "error",
-                    "error": type(e).__name__
+                    "error": str(e)
                 })
-
     except json.JSONDecodeError as e:
         logging.error(f"Error: Mensaje JSON malformado. Detalle: {e}")
-        # Retornar lista vacía o alguna respuesta de error genérica
         return []
-
     except Exception as e:
         logging.error(f"Error general procesando las operaciones: {e}")
         return []
-
     return responses
 
 def main():
-    # Carga de configuración
     config_data = load_config("config.json")
+    if config_data is None:
+        logging.error("No se pudo cargar la configuración. Abortando ejecución.")
+        return
 
     kafka_broker = config_data["kafka_bootstrap_servers"]
     group_id = config_data["group_id"]
     topic_input = config_data["input_topic"]
     topic_output = config_data["output_topic"]
 
-    # Inicializa el consumidor
     consumer_config = {
         'bootstrap.servers': kafka_broker,
         'group.id': group_id,
-        'auto.offset.reset': 'earliest'  # Cambia a 'latest' si quieres consumir solo nuevos mensajes
+        'auto.offset.reset': 'latest'
     }
     consumer = Consumer(consumer_config)
     consumer.subscribe([topic_input])
     
-    # Inicializa el productor
     producer = Producer({'bootstrap.servers': kafka_broker})
 
     logging.info(f"Consumidor suscrito al topic: {topic_input}")
@@ -146,7 +126,6 @@ def main():
 
     try:
         while True:
-            # Consumir mensaje
             msg = consumer.poll(1.0)
             if msg is None:
                 continue
@@ -160,21 +139,13 @@ def main():
             raw_value = msg.value().decode('utf-8')
             logging.info(f"Mensaje recibido: {raw_value}")
 
-            # Procesar el mensaje
             responses = process_message(raw_value)
 
-            # Publicar las respuestas (un único mensaje con un array JSON)
             if responses:
-                # Usamos ensure_ascii=False para no escapar caracteres Unicode
-                # y luego encodeamos para obtener bytes
                 producer_message_bytes = json.dumps(responses, ensure_ascii=False).encode('utf-8')
-
-                # Imprimimos decodificado para ver el JSON sin b'' ni escapes
                 logging.info(f"Enviando respuestas: {producer_message_bytes.decode('utf-8')}")
-
                 producer.produce(topic_output, value=producer_message_bytes)
                 producer.flush()
-
     except KeyboardInterrupt:
         logging.warning("Interrupción del usuario (Ctrl+C). Cerrando el consumidor.")
     finally:

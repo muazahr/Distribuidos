@@ -1,7 +1,7 @@
 {
-    "kafka_bootstrap_servers": "localhost:9092",
-    "group_id": "remotetypes_group",
-    "input_topic": "operations",
-    "output_topic": "results"
-  }
-  
+  "kafka_bootstrap_servers": "localhost:9092",
+  "group_id": "remotetypes_group",
+  "input_topic": "operations",
+  "output_topic": "results",
+  "ice_factory_proxy": "Factory:default -h localhost -p 10000"
+}
